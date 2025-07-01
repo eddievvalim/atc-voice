@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Full ATC Voice Simulator Demo</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 10px;
+    background: #eef7fa;
+    color: #222;
+  }
+  #container {
+    display: flex;
+    gap: 20px;
+  }
+  #leftPanel {
+    flex: 1;
+    max-width: 220px;
+  }
+  #mapCanvas {
+    border: 1px solid #444;
+    background: #cde7f0;
+  }
+  label {
+    font-weight: bold;
+    display: block;
+    margin: 10px 0 5px;
+  }
+  select, button {
+    width: 100%;
+    padding: 8px;
+    font-size: 16px;
+  }
+  #recognizedText, #commandLog {
+    margin-top: 10px;
+    height: 80px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #aaa;
+    padding: 5px;
+    font-family: monospace;
+    font-size: 14px;
+  }
+  #commandLog {
+    height: 150px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Full ATC Voice Simulator Demo</h1>
+
+<div id="container">
+  <div id="leftPanel">
+    <label for="aircraftSelect">Select Aircraft:</label>
+    <select id="aircraftSelect"></select>
+
+    <button id="startVoiceBtn">Start Voice Command</button>
+
+    <div>
+      <label>Recognized Speech:</label>
+      <div id="recognizedText"></div>
+    </div>
+
+    <div>
+      <label>Command Log:</label>
+      <div id="commandLog"></div>
+    </div>
+  </div>
+
+  <canvas id="mapCanvas" width="700" height="450"></canvas>
+</div>
+
+<script>
+  // 1. Setup Canvas
+  const canvas = document.getElementById('mapCanvas');
+  const ctx = canvas.getContext('2d');
+
+  // 2. Utility functions to generate callsigns
+  function generateGACallsign() {
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const nums = '0123456789';
+    const randLetter = () => letters.charAt(Math.floor(Math.random() * letters.length));
+    const randNum = () => nums.charAt(Math.floor(Math.random() * nums.length));
+    return 'N' + randNum() + randNum() + randNum() + randLetter() + randLetter();
+  }
+  function generateAirlineCallsign() {
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const nums = '0123456789';
+    const randLetter = () => letters.charAt(Math.floor(Math.random() * letters.length));
+    const randNum = () => nums.charAt(Math.floor(Math.random() * nums.length));
+    return randLetter() + randLetter() + randLetter() + randNum() + randNum() + randNum();
+  }
+
+  // 3. Aircraft list generation with callsigns and random positions near Charlie
+  const aircraftList = [];
+  const aircraftCount = 5;
+  for(let i = 0; i < aircraftCount; i++) {
+    const isGA = Math.random() < 0.5;
+    const callsign = isGA ? generateGACallsign() : generateAirlineCallsign();
+    const x = 80 + Math.random() * 80;
+    const y = 180 + Math.random() * 60;
+    aircraftList.push({ callsign, x, y, heading: 90, status: 'Idle' });
+  }
+
+  // 4. Taxiways and Runways map positions
+  const taxiways = {
+    Alpha: { x: 600, y: 200 },
+    Bravo: { x: 350, y: 200 },
+    Charlie: { x: 100, y: 200 }
+  };
+  const runways = {
+    '07L': { x: 650, y: 60 },
+    '07C': { x: 650, y: 110 },
+    '07R': { x: 650, y: 160 },
+    '25L': { x: 50, y: 60 },
+    '25C': { x: 50, y: 110 },
+    '25R': { x: 50, y: 160 }
+  };
+
+  // 5. UI Elements and selected aircraft index
+  let selectedIndex = 0;
+  const aircraftSelect = document.getElementById('aircraftSelect');
+  const recognizedTextDiv = document.getElementById('recognizedText');
+  const commandLogDiv = document.getElementById('commandLog');
+  const startVoiceBtn = document.getElementById('startVoiceBtn');
+
+  // 6. Populate dropdown list for aircraft selection
+  function populateAircraftSelect() {
+    aircraftSelect.innerHTML = '';
+    aircraftList.forEach((ac, i) => {
+      const option = document.createElement('option');
+      option.value = i;
+      option.textContent = `${ac.callsign} (${ac.status})`;
+      aircraftSelect.appendChild(option);
+    });
+    aircraftSelect.value = selectedIndex;
+  }
+  populateAircraftSelect();
+
+  aircraftSelect.addEventListener('change', () => {
+    selectedIndex = parseInt(aircraftSelect.value);
+    logCommand(`Selected aircraft: ${aircraftList[selectedIndex].callsign}`);
+    drawMap();
+  });
+
+  // 7. Draw Map: taxiways, runways, aircraft icons and callsigns
+  function drawMap() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Taxiways
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.moveTo(taxiways.Charlie.x, taxiways.Charlie.y);
+    ctx.lineTo(taxiways.Bravo.x, taxiways.Bravo.y);
+    ctx.lineTo(taxiways.Alpha.x, taxiways.Alpha.y);
+    ctx.stroke();
+
+    // Runways
+    Object.entries(runways).forEach(([name, pos]) => {
+      ctx.fillStyle = '#666';
+      ctx.fillRect(pos.x - 20, pos.y - 12, 40, 24);
+      ctx.fillStyle = 'white';
+      ctx.font = '16px Arial';
+      ctx.fillText(name, pos.x - 18, pos.y + 6);
+    });
+
+    // Aircraft
+    aircraftList.forEach((ac, i) => {
+      ctx.save();
+      ctx.translate(ac.x, ac.y);
+      ctx.rotate(ac.heading * Math.PI / 180);
+      ctx.fillStyle = (i === selectedIndex) ? 'red' : 'blue';
+      ctx.beginPath();
+      ctx.moveTo(0, -10);
+      ctx.lineTo(6, 10);
+      ctx.lineTo(-6, 10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      ctx.fillStyle = '#222';
+      ctx.font = '14px Arial';
+      ctx.fillText(ac.callsign, ac.x + 10, ac.y + 5);
+    });
+  }
+  drawMap();
+
+  // 8. Command logging helper
+  function logCommand(msg) {
+    const time = new Date().toLocaleTimeString();
+    commandLogDiv.innerHTML += `[${time}] ${msg}<br>`;
+    commandLogDiv.scrollTop = commandLogDiv.scrollHeight;
+  }
+
+  // 9. Setup speech recognition
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    alert('Your browser does not support Speech Recognition API');
+  }
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'en-US';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onresult = (event) => {
+    const speech = event.results[0][0].transcript.toLowerCase();
+    recognizedTextDiv.textContent = `You said: "${speech}"`;
+
+    const cmd = parseATCCommand(speech);
+    logCommand(`Parsed Command for ${aircraftList[selectedIndex].callsign}: ${JSON.stringify(cmd)}`);
+
+    executeCommand(cmd, selectedIndex);
+  };
+
+  recognition.onerror = (event) => {
+    recognizedTextDiv.textContent = 'Error in recognition: ' + event.error;
+  };
+
+  startVoiceBtn.onclick = () => {
+    recognition.start();
+  };
+
+  // 10. Advanced command parser
+  function parseATCCommand(text) {
+    const commands = [
+      {
+        type: 'taxi',
+        regex: /taxi to runway (\d+\w?) via ((?:\w+(?: and |, )?)+)/,
+        parse: (m) => ({
+          runway: m[1].toUpperCase(),
+          taxiways: m[2].split(/(?: and |, )/).map(s => capitalize(s)),
+        }),
+      },
+      {
+        type: 'hold_short',
+        regex: /hold short of runway (\d+\w?)/,
+        parse: (m) => ({ runway: m[1].toUpperCase() }),
+      },
+      {
+        type: 'line_up',
+        regex: /line up and wait runway (\d+\w?)/,
+        parse: (m) => ({ runway: m[1].toUpperCase() }),
+      },
+      {
+        type: 'takeoff_clearance',
+        regex: /cleared for takeoff runway (\d+\w?)/,
+        parse: (m) => ({ runway: m[1].toUpperCase() }),
+      },
+      {
+        type: 'climb',
+        regex: /climb and maintain (\d+) feet/,
+        parse: (m) => ({ altitude: parseInt(m[1], 10) }),
+      },
+      {
+        type: 'unknown',
+        regex: /.*/,
+        parse: (m) => ({ raw: text }),
+      },
+    ];
+
+    for (const cmd of commands) {
+      const match = text.match(cmd.regex);
+      if (match) {
+        const parsed = cmd.parse(match);
+        parsed.type = cmd.type;
+        return parsed;
+      }
+    }
+  }
+  function capitalize(s) {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  // 11. Execute commands & update aircraft status
+  function executeCommand(cmd, aircraftIndex) {
+    const ac = aircraftList[aircraftIndex];
+    switch (cmd.type) {
+      case 'taxi':
+        logCommand(`Taxiing ${ac.callsign} to runway ${cmd.runway} via ${cmd.taxiways.join(', ')}`);
+        ac.status = `Taxiing to ${cmd.runway}`;
+        break;
+      case 'hold_short':
+        logCommand(`${ac.callsign} holding short of runway ${cmd.runway}`);
+        ac.status = `Holding short of ${cmd.runway}`;
+        break;
+      case 'line_up':
+        logCommand(`${ac.callsign} lining up and waiting on runway ${cmd.runway}`);
+        ac.status = `Lining up on ${cmd.runway}`;
+        break;
+      case 'takeoff_clearance':
+        logCommand(`${ac.callsign} cleared for takeoff on runway ${cmd.runway}`);
+        ac.status = `Taking off from ${cmd.runway}`;
+        break;
+      case 'climb':
+        logCommand(`${ac.callsign} climb and maintain ${cmd.altitude} feet`);
+        ac.status = `Climbing to ${cmd.altitude} ft`;
+        break;
+      default:
+        logCommand(`Unknown command: ${cmd.raw}`);
+    }
+    populateAircraftSelect();
+    drawMap();
+  }
+</script>
+
+</body>
+</html>
