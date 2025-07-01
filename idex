@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>IFR Clearance Practice - Full Phrase</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    background: #f9faff;
+    color: #222;
+  }
+  h1 {
+    margin-bottom: 15px;
+  }
+  label {
+    font-weight: bold;
+    display: block;
+    margin: 10px 0 5px;
+  }
+  select, button {
+    font-size: 16px;
+    padding: 8px;
+    width: 350px;
+  }
+  #recognizedText, #clearanceLog {
+    margin-top: 10px;
+    background: white;
+    border: 1px solid #aaa;
+    padding: 10px;
+    width: 700px;
+    max-width: 100%;
+    height: 180px;
+    overflow-y: auto;
+    font-family: monospace;
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+
+<h1>IFR Clearance Practice - Full Phrase</h1>
+
+<label for="aircraftSelect">Select Aircraft Callsign:</label>
+<select id="aircraftSelect"></select>
+
+<br /><br />
+<button id="startVoiceBtn">Start Voice Command</button>
+
+<div>
+  <label>Recognized Speech:</label>
+  <div id="recognizedText"></div>
+</div>
+
+<div>
+  <label>Parsed Clearance:</label>
+  <div id="clearanceLog"></div>
+</div>
+
+<script>
+  // Generate sample aircraft callsigns
+  function generateGACallsign() {
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const nums = '0123456789';
+    const randLetter = () => letters.charAt(Math.floor(Math.random() * letters.length));
+    const randNum = () => nums.charAt(Math.floor(Math.random() * nums.length));
+    return 'N' + randNum() + randNum() + randNum() + randLetter() + randLetter();
+  }
+
+  function generateAirlineCallsign() {
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const nums = '0123456789';
+    const randLetter = () => letters.charAt(Math.floor(Math.random() * letters.length));
+    const randNum = () => nums.charAt(Math.floor(Math.random() * nums.length));
+    return randLetter() + randLetter() + randLetter() + randNum() + randNum() + randNum();
+  }
+
+  // Populate aircraft callsigns
+  const aircraftList = [];
+  for (let i = 0; i < 6; i++) {
+    const isGA = Math.random() < 0.5;
+    aircraftList.push(isGA ? generateGACallsign() : generateAirlineCallsign());
+  }
+
+  const aircraftSelect = document.getElementById('aircraftSelect');
+  aircraftList.forEach(call => {
+    const option = document.createElement('option');
+    option.value = call;
+    option.textContent = call;
+    aircraftSelect.appendChild(option);
+  });
+
+  // DOM Elements
+  const recognizedTextDiv = document.getElementById('recognizedText');
+  const clearanceLog = document.getElementById('clearanceLog');
+  const startVoiceBtn = document.getElementById('startVoiceBtn');
+
+  // Speech Recognition setup
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    alert('Your browser does not support Speech Recognition API');
+  }
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'en-US';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onresult = (event) => {
+    const speech = event.results[0][0].transcript;
+    recognizedTextDiv.textContent = `You said:\n"${speech}"`;
+
+    const parsed = parseFullIFRClearance(speech);
+    if (parsed) {
+      logParsedClearance(parsed);
+    } else {
+      logParsedClearance({ error: 'Could not parse clearance. Try to follow the phrase format exactly.' });
+    }
+  };
+
+  recognition.onerror = (event) => {
+    recognizedTextDiv.textContent = 'Error: ' + event.error;
+  };
+
+  startVoiceBtn.onclick = () => {
+    clearanceLog.textContent = '';
+    recognition.start();
+  };
+
+  // Parsing full IFR clearance phrase
+  // Using regex with optional spaces and case insensitive matching
+  // Example phrase:
+  // "N123AB, cleared to KJFK via DCT GON, departure runway will be runway 25R, expect flight level 350, then flight level 380 10 minutes after departure. Departure will be with New York Center, squawk 1234"
+  function parseFullIFRClearance(text) {
+    // Normalize spacing and case
+    const phrase = text.replace(/\s+/g, ' ').trim();
+
+    const regex = new RegExp([
+      '^\\s*', // Start
+      '([A-Za-z0-9]+)\\s*,?\\s*', // Callsign, with optional comma
+      'cleared to\\s+([A-Za-z0-9]+)\\s+', // Airport
+      'via\\s+([A-Za-z0-9\\s]+)\\s*,?\\s*', // Route (letters, numbers, spaces)
+      'departure runway will be runway\\s+([0-9]{1,2}[A-Za-z]?)\\s*,?\\s*', // Runway
+      'expect flight level\\s+(\\d{2,3})\\s*,?\\s*', // FL1 (like 350)
+      'then flight level\\s+(\\d{2,3})\\s+(\\d+)\\s+minutes after departure\\.\\s*', // FL2 and minutes
+      'departure will be with\\s+([A-Za-z\\s]+),\\s*', // Center name
+      'squawk\\s+(\\d{3,4})\\s*$', // Squawk code
+    ].join(''), 'i');
+
+    const m = phrase.match(regex);
+    if (!m) return null;
+
+    return {
+      callsign: m[1].toUpperCase(),
+      airport: m[2].toUpperCase(),
+      route: m[3].toUpperCase(),
+      departureRunway: m[4].toUpperCase(),
+      expectFL1: parseInt(m[5], 10),
+      expectFL2: parseInt(m[6], 10),
+      afterMinutes: parseInt(m[7], 10),
+      center: capitalizeWords(m[8].trim()),
+      squawk: m[9]
+    };
+  }
+
+  // Capitalize words helper
+  function capitalizeWords(str) {
+    return str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+  }
+
+  // Log parsed clearance nicely
+  function logParsedClearance(data) {
+    let msg = '';
+    if (data.error) {
+      msg = `ERROR: ${data.error}`;
+    } else {
+      msg = [
+        `Callsign: ${data.callsign}`,
+        `Cleared to Airport: ${data.airport}`,
+        `Route: ${data.route}`,
+        `Departure Runway: ${data.departureRunway}`,
+        `Expect Flight Level: FL${data.expectFL1}`,
+        `Then Flight Level: FL${data.expectFL2} after ${data.afterMinutes} minutes`,
+        `Departure will be with: ${data.center}`,
+        `Squawk: ${data.squawk}`
+      ].join('\n');
+    }
+    const time = new Date().toLocaleTimeString();
+    clearanceLog.textContent += `[${time}]\n${msg}\n\n`;
+    clearanceLog.scrollTop = clearanceLog.scrollHeight;
+  }
+</script>
+
+</body>
+</html>
